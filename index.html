@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <style>
+        :root { --tg-bg: #1a1b1e; --primary: #0088cc; --gold: #ffeb3b; --card-bg: #25262b; --red: #ff4444; }
+        body { background: var(--tg-bg); color: white; font-family: sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        .header { padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; background: #111; z-index: 100; }
+        .page { display: none; flex: 1; flex-direction: column; padding: 20px; text-align: center; overflow-y: auto; box-sizing: border-box; padding-bottom: 100px; }
+        .active-page { display: flex; }
+        
+        /* Исправленный контейнер видео и таймера */
+        .video-box { background: #000; width: 100%; aspect-ratio: 16/9; border-radius: 15px; border: 2px solid #333; position: relative; overflow: hidden; margin-bottom: 20px; }
+        #video-player { width: 100%; height: 100%; pointer-events: none; }
+        
+        #timer-overlay { 
+            position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.8); 
+            padding: 8px 15px; border-radius: 10px; color: var(--gold); 
+            font-size: 20px; font-weight: bold; border: 1px solid var(--gold); z-index: 1000;
+        }
+
+        .btn-action { background: var(--primary); border: none; color: white; padding: 18px; border-radius: 12px; width: 100%; font-weight: bold; margin-top: 15px; cursor: pointer; }
+        input, select { width: 100%; padding: 15px; margin: 8px 0; border-radius: 10px; border: 1px solid #333; background: #0b0c0d; color: white; font-size: 16px; box-sizing: border-box; }
+        .nav-bar { background: #111; display: flex; justify-content: space-around; padding: 10px 0 25px 0; border-top: 1px solid #222; position: fixed; bottom: 0; width: 100%; }
+        .nav-btn { color: #5c5f66; font-size: 10px; text-align: center; flex: 1; cursor: pointer; }
+        .nav-btn.active { color: var(--primary); }
+        .order-card { background: var(--card-bg); border-radius: 12px; padding: 12px; margin-bottom: 10px; text-align: left; border: 1px solid #333; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>🤖 UVIEW PRO <span id="status-label" style="color:#00ff00; font-size:10px; margin-left:5px;"></span></div>
+        <div style="color:var(--gold)">💰 <span id="coin-count">0</span></div>
+    </div>
+
+    <div id="page-home" class="page active-page">
+        <div class="video-box">
+            <div id="timer-overlay" style="display:none;">⏳ <span id="seconds">0</span></div>
+            <div id="video-player"></div>
+        </div>
+        <div id="watch-controls">
+            <button class="btn-action" onclick="startWatching()">▶ ЗАПУСТИТЬ ЦИКЛ</button>
+        </div>
+        <p id="video-info" style="font-size: 12px; color: #888;"></p>
+    </div>
+
+    <div id="page-upload" class="page">
+        <h3>СОЗДАТЬ ЗАКАЗ</h3>
+        <input type="text" id="yt-url" placeholder="Ссылка на YouTube">
+        <p style="font-size:12px; color:#888; margin: 5px 0;">Выберите тариф:</p>
+        <select id="v-time" onchange="updPr()">
+            <option value="60">60 сек (1 монета/просмотр)</option>
+            <option value="180">180 сек (2 монеты/просмотр)</option>
+        </select>
+        <p style="font-size:12px; color:#888; margin: 5px 0;">Количество просмотров:</p>
+        <input type="number" id="v-count" value="1" min="1" oninput="updPr()">
+        <div style="margin:15px 0; font-size:18px;">К оплате: <span id="total-price" style="color:var(--gold)">1</span> 💰</div>
+        <button class="btn-action" onclick="uploadVid()">ОПУБЛИКОВАТЬ</button>
+    </div>
+
+    <div id="page-orders" class="page">
+        <h3>📊 МОИ ЗАКАЗЫ</h3>
+        <div id="orders-list"></div>
+    </div>
+
+    <div class="nav-bar">
+        <div class="nav-btn active" onclick="tab('home', this)">🏠 ЛЕНТА</div>
+        <div class="nav-btn" onclick="tab('upload', this)">📷 ЗАГРУЗКА</div>
+        <div class="nav-btn" onclick="tab('orders', this); loadMyOrders();">📊 ЗАКАЗЫ</div>
+    </div>
+
+    <script>
+        const S_URL = "https://ikvihkyvulxhgeffyeyb.supabase.co", 
+              S_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlrdmloa3l2dWx4aGdlZmZ5ZXliIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDAyNDY3OSwiZXhwIjoyMDg1NjAwNjc5fQ.i28yTAOU3x3MEOBOWGJCum9oH6dYuQ0g0Gz9TbCf2Gw", 
+              sb = supabase.createClient(S_URL, S_KEY), tg = window.Telegram.WebApp;
+
+        let userId = tg.initDataUnsafe?.user?.id?.toString() || "u_test", vids = [], curr = 0, coins = 0, player, timerId;
+
+        async function boot() {
+            tg.expand();
+            let { data: p } = await sb.from('profiles').select('*').eq('user_id', userId).single();
+            if (!p) {
+                await sb.from('profiles').insert([{ user_id: userId, coins: 10 }]);
+                coins = 10;
+            } else { coins = p.coins; }
+            document.getElementById('coin-count').innerText = coins;
+            loadVideos();
+        }
+
+        async function loadVideos() {
+            let { data: v } = await sb.from('videos').select('*').gt('views_needed', 0);
+            vids = v || [];
+            if (vids.length > 0) updateVideoDisplay();
+        }
+
+        function onYouTubeIframeAPIReady() { boot(); }
+        
+        function updateVideoDisplay() { 
+            if(!vids[curr]) return;
+            const vid = vids[curr];
+            document.getElementById('video-info').innerText = `ID: ${vid.youtube_id} | Тариф: ${vid.duration}с`;
+            if (player) { player.loadVideoById(vid.youtube_id); } 
+            else {
+                player = new YT.Player('video-player', {
+                    height: '100%', width: '100%', videoId: vid.youtube_id,
+                    playerVars: { 'autoplay': 0, 'controls': 0, 'rel': 0, 'playsinline': 1, 'mute': 1 }
+                });
+            }
+        }
+
+        function startWatching() {
+            if(!vids[curr]) return;
+            document.getElementById('watch-controls').style.display='none';
+            document.getElementById('timer-overlay').style.display='block';
+            document.getElementById('status-label').innerText = "● AUTO";
+            playCycle();
+        }
+
+        function playCycle() {
+            if(!vids[curr]) return loadVideos();
+            player.playVideo();
+            let t = vids[curr].duration;
+            document.getElementById('seconds').innerText = t;
+            
+            clearInterval(timerId);
+            timerId = setInterval(() => {
+                t--;
+                document.getElementById('seconds').innerText = t;
+                if(t <= 0) {
+                    clearInterval(timerId);
+                    finishOne();
+                }
+            }, 1000);
+        }
+
+        async function finishOne() {
+            const vid = vids[curr];
+            // Награда за просмотр (например 1 монета за любой просмотр или по тарифу)
+            const reward = vid.duration == 180 ? 2 : 1; 
+            coins += reward;
+            document.getElementById('coin-count').innerText = coins;
+            
+            await sb.from('profiles').update({ coins }).eq('user_id', userId);
+            await sb.from('videos').update({ 
+                views_done: vid.views_done + 1, 
+                views_needed: vid.views_needed - 1 
+            }).eq('id', vid.id);
+
+            curr++;
+            if (curr >= vids.length) { curr = 0; await loadVideos(); }
+            updateVideoDisplay();
+            setTimeout(playCycle, 1500);
+        }
+
+        function updPr() {
+            const time = document.getElementById('v-time').value;
+            const count = document.getElementById('v-count').value;
+            const pricePerOne = (time == "180") ? 2 : 1;
+            document.getElementById('total-price').innerText = count * pricePerOne;
+        }
+
+        async function uploadVid() {
+            const url = document.getElementById('yt-url').value;
+            const vidId = url.includes('v=') ? url.split('v=')[1].split('&')[0] : url.split('/').pop().split('?')[0];
+            const price = parseInt(document.getElementById('total-price').innerText);
+            
+            if (coins < price) return tg.showAlert("Недостаточно монет для такого количества просмотров!");
+            
+            await sb.from('videos').insert([{ 
+                youtube_id: vidId, 
+                views_needed: parseInt(document.getElementById('v-count').value), 
+                duration: parseInt(document.getElementById('v-time').value), 
+                user_id: userId, 
+                views_done: 0 
+            }]);
+            
+            coins -= price;
+            await sb.from('profiles').update({ coins }).eq('user_id', userId);
+            tg.showAlert("Заказ активен!");
+            location.reload();
+        }
+
+        async function loadMyOrders() {
+            let { data: myV } = await sb.from('videos').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+            document.getElementById('orders-list').innerHTML = (myV || []).map(v => `
+                <div class="order-card">
+                    <b>ID: ${v.youtube_id}</b><br>
+                    Осталось: ${v.views_needed} просмотров (${v.duration}с)
+                </div>
+            `).join('') || "У вас нет активных заказов";
+        }
+
+        function tab(n, el) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active-page'));
+            document.getElementById('page-' + n).classList.add('active-page');
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            el.classList.add('active');
+        }
+    </script>
+</body>
+</html>
