@@ -5,49 +5,61 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="https://www.youtube.com/iframe_api"></script>
     <style>
-        :root { --tg-bg: #1a1b1e; --primary: #0088cc; --gold: #ffeb3b; }
-        body { background: var(--tg-bg); color: white; font-family: sans-serif; margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; align-items: center; }
+        :root { --tg-bg: #1a1b1e; --primary: #0088cc; --gold: #ffeb3b; --red: #ff4444; }
+        body { background: var(--tg-bg); color: white; font-family: sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; align-items: center; }
         
         .header { width: 100%; padding: 15px; display: flex; justify-content: space-between; background: #111; border-bottom: 1px solid #333; box-sizing: border-box; }
         
-        .instruction { background: rgba(255, 255, 255, 0.05); padding: 15px; border-radius: 12px; margin: 15px; border-left: 4px solid var(--primary); font-size: 14px; }
+        .card { background: #25262b; margin: 20px; padding: 20px; border-radius: 20px; width: calc(100% - 40px); box-sizing: border-box; text-align: center; border: 1px solid #333; }
 
-        .video-frame { 
-            width: calc(100% - 30px); aspect-ratio: 16/9; background: #000; 
-            border-radius: 15px; overflow: hidden; border: 2px solid #333; 
-        }
-        #video-player { width: 100%; height: 100%; }
+        .thumbnail { width: 100%; border-radius: 12px; margin-bottom: 15px; display: block; }
+        
+        .btn-main { background: var(--primary); color: white; border: none; padding: 20px; border-radius: 15px; width: 100%; font-size: 18px; font-weight: bold; cursor: pointer; text-decoration: none; display: block; }
+        
+        .btn-verify { background: #4caf50; display: none; margin-top: 15px; }
 
-        .timer-display { font-size: 50px; font-weight: bold; color: var(--gold); margin: 20px 0; display: none; }
-        .reward-info { color: #888; font-size: 12px; margin-bottom: 10px; }
+        .timer-big { font-size: 60px; font-weight: bold; color: var(--gold); margin: 20px 0; }
+        
+        .step { font-size: 14px; color: #aaa; margin-bottom: 10px; display: flex; align-items: center; gap: 10px; text-align: left; }
+        .step b { color: var(--primary); }
 
-        .btn-next { background: #333; color: white; border: none; padding: 15px 30px; border-radius: 10px; font-weight: bold; margin-top: 10px; cursor: pointer; }
+        .nav-bar { background: #111; display: flex; justify-content: space-around; padding: 20px 0 30px; position: fixed; bottom: 0; width: 100%; border-top: 1px solid #222; }
     </style>
 </head>
 <body>
 
 <div class="header">
-    <div style="font-weight: bold;">UVIEW PRO</div>
+    <div style="font-weight: bold;">UVIEW PRO 2026</div>
     <div style="color:var(--gold)">💰 <span id="coin-count">0</span></div>
 </div>
 
-<div class="instruction" id="instr">
-    <b>Инструкция:</b><br>
-    1. Нажми на логотип YouTube или кнопку Play в центре.<br>
-    2. Если звука нет — нажми на динамик в самом видео.<br>
-    3. Таймер на <b>180 сек</b> пойдет после старта!
+<div class="card" id="task-card">
+    <img id="vid-thumb" class="thumbnail" src="" alt="Превью">
+    
+    <div class="step"><b>1.</b> Нажми кнопку ниже, чтобы открыть видео</div>
+    <div class="step"><b>2.</b> Посмотри его 180 сек (в приложении звук ЕСТЬ)</div>
+    <div class="step"><b>3.</b> Вернись сюда, чтобы забрать награду</div>
+
+    <a id="yt-link" class="btn-main" onclick="startTask()">▶ ОТКРЫТЬ В YOUTUBE</a>
+    
+    <div id="timer-box" style="display:none;">
+        <div class="timer-big" id="timer">180</div>
+        <div style="color: #888;">Не закрывайте мини-приложение...</div>
+    </div>
+
+    <button id="claim-btn" class="btn-main btn-verify" onclick="claimReward()">💰 ЗАБРАТЬ 150 МОНЕТ</button>
 </div>
 
-<div class="video-frame">
-    <div id="video-player"></div>
+<div id="no-vids" style="display:none; padding: 50px; text-align: center;">
+    <h2>Все видео просмотрены!</h2>
+    <p>Зайдите позже или добавьте своё видео.</p>
 </div>
 
-<div id="timer" class="timer-display">180</div>
-<div id="reward-text" class="reward-info">Награда: +150 монет</div>
-
-<button class="btn-next" id="next-btn" onclick="location.reload()">Пропустить / Другое</button>
+<div class="nav-bar">
+    <div style="color:var(--primary)">🏠 ЛЕНТА</div>
+    <div onclick="tg.showAlert('Магазин будет доступен после обновления')">🛒 МАГАЗИН</div>
+</div>
 
 <script>
     const S_URL = "https://itmwgzryoeeehymbyrdz.supabase.co", 
@@ -55,7 +67,7 @@
           sb = supabase.createClient(S_URL, S_KEY), tg = window.Telegram.WebApp;
 
     let userId = tg.initDataUnsafe?.user?.id?.toString() || "u_test", 
-        vids = [], curr = 0, player, timerId, timeLeft = 180;
+        vids = [], curr = 0, timeLeft = 180, timerId;
 
     async function boot() {
         tg.expand();
@@ -66,66 +78,41 @@
         vids = (v || []).filter(item => (item.views_done || 0) < item.views_needed);
         
         if (vids.length > 0) {
-            loadYT();
+            const vid = vids[curr];
+            document.getElementById('vid-thumb').src = `https://img.youtube.com/vi/${vid.youtube_id}/mqdefault.jpg`;
+            document.getElementById('yt-link').href = `https://www.youtube.com/watch?v=${vid.youtube_id}`;
         } else {
-            document.getElementById('instr').innerText = "Видео закончились! Приходите позже.";
+            document.getElementById('task-card').style.display = 'none';
+            document.getElementById('no-vids').style.display = 'block';
         }
     }
 
-    function loadYT() {
-        player = new YT.Player('video-player', {
-            videoId: vids[curr].youtube_id,
-            playerVars: { 
-                'autoplay': 0, 
-                'controls': 1, 
-                'playsinline': 1, // Важно для iPhone
-                'rel': 0 
-            },
-            events: {
-                'onStateChange': onStateChange
-            }
-        });
-    }
-
-    function onStateChange(event) {
-        // Статус 1 — это когда видео реально начало играть
-        if (event.data == YT.PlayerState.PLAYING) {
-            startTimer();
-            document.getElementById('instr').style.display = 'none';
-            document.getElementById('timer').style.display = 'block';
-            document.getElementById('next-btn').style.display = 'none';
-        }
-        // Если видео на паузе
-        if (event.data == YT.PlayerState.PAUSED) {
-            tg.showAlert("Пожалуйста, не ставьте на паузу!");
-        }
-    }
-
-    function startTimer() {
-        if (timerId) return;
+    function startTask() {
+        // Запускаем таймер сразу после клика по ссылке
+        document.getElementById('yt-link').style.display = 'none';
+        document.getElementById('timer-box').style.display = 'block';
+        
         timerId = setInterval(() => {
-            // Проверяем, что видео всё еще играет
-            if (player && player.getPlayerState() === 1) {
-                timeLeft--;
-                document.getElementById('timer').innerText = timeLeft;
-                
-                if (timeLeft <= 0) {
-                    clearInterval(timerId);
-                    finish();
-                }
+            timeLeft--;
+            document.getElementById('timer').innerText = timeLeft;
+            if (timeLeft <= 0) {
+                clearInterval(timerId);
+                document.getElementById('timer-box').style.display = 'none';
+                document.getElementById('claim-btn').style.display = 'block';
+                tg.HapticFeedback.notificationOccurred('success');
             }
         }, 1000);
     }
 
-    async function finish() {
+    async function claimReward() {
         const currentCoins = parseInt(document.getElementById('coin-count').innerText);
         await sb.from('profiles').update({ coins: currentCoins + 150 }).eq('user_id', userId);
         await sb.from('videos').update({ views_done: (vids[curr].views_done || 0) + 1 }).eq('id', vids[curr].id);
-        tg.showAlert("Просмотр завершен! +150 монет.");
+        tg.showAlert("Успех! +150 монет начислено.");
         location.reload();
     }
 
-    function onYouTubeIframeAPIReady() { boot(); }
+    window.onload = boot;
 </script>
 
 </body>
