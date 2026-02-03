@@ -6,129 +6,216 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        :root { --tg-bg: #1a1b1e; --primary: #0088cc; --gold: #ffeb3b; }
+        :root { --tg-bg: #1a1b1e; --primary: #0088cc; --gold: #ffeb3b; --card-bg: #25262b; --red: #ff4444; }
         body { background: var(--tg-bg); color: white; font-family: sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-        .header { padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; background: #111; border-bottom: 1px solid #333; }
-        .page { flex: 1; display: flex; flex-direction: column; padding: 15px; text-align: center; }
         
-        /* Контейнер видео */
-        .video-box { 
-            width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 15px; 
-            overflow: hidden; position: relative; border: 2px solid #333; 
-        }
+        /* UI Элементы */
+        .header { padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; background: #111; border-bottom: 1px solid #333; z-index: 100; }
+        .page { display: none; flex: 1; flex-direction: column; padding: 20px; text-align: center; overflow-y: auto; box-sizing: border-box; padding-bottom: 100px; }
+        .active-page { display: flex; }
+
+        /* Видео плеер */
+        .video-box { width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 15px; overflow: hidden; position: relative; border: 2px solid #333; }
         iframe { width: 100%; height: 100%; border: none; }
-
-        /* Наложенная кнопка для старта (Разблокировка звука) */
-        .overlay {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.7); display: flex; flex-direction: column;
-            align-items: center; justify-content: center; z-index: 10; cursor: pointer;
-        }
-        .play-btn { background: var(--primary); padding: 12px 25px; border-radius: 30px; font-weight: bold; }
-
-        .timer-text { font-size: 40px; color: var(--gold); font-weight: bold; margin: 15px 0; }
-        .hint { font-size: 12px; color: #888; margin-bottom: 10px; }
+        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; cursor: pointer; }
         
-        .nav-bar { background: #111; display: flex; justify-content: space-around; padding: 15px 0 30px; border-top: 1px solid #222; }
+        /* Кнопки и формы */
+        .btn-action { background: var(--primary); border: none; color: white; padding: 18px; border-radius: 12px; width: 100%; font-weight: bold; margin-top: 15px; cursor: pointer; font-size: 16px; }
+        input, select { width: 100%; padding: 15px; margin: 8px 0; border-radius: 10px; border: 1px solid #333; background: #0b0c0d; color: white; font-size: 16px; box-sizing: border-box; }
+        
+        /* Магазин и Заказы */
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+        .card { background: var(--card-bg); padding: 15px; border-radius: 15px; border: 1px solid #333; text-align: left; position: relative; margin-bottom: 10px; }
+        .btn-buy { background: #4caf50; border: none; color: white; padding: 10px; border-radius: 8px; width: 100%; font-weight: bold; margin-top: 5px; }
+        .btn-del { background: var(--red); border: none; color: white; padding: 5px 10px; border-radius: 6px; font-size: 12px; float: right; }
+
+        /* Навигация */
+        .nav-bar { background: #111; display: flex; justify-content: space-around; padding: 10px 0 25px 0; border-top: 1px solid #222; position: fixed; bottom: 0; width: 100%; z-index: 1000; }
+        .nav-btn { color: #5c5f66; font-size: 10px; cursor: pointer; text-align: center; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+        .nav-btn.active { color: var(--primary); }
     </style>
 </head>
 <body>
 
-<div class="header">
-    <div>🤖 UVIEW PRO</div>
-    <div style="color:var(--gold)">💰 <span id="coin-count">0</span></div>
-</div>
+    <div class="header">
+        <div style="font-weight: bold;">🤖 UVIEW PRO</div>
+        <div style="color:var(--gold)">💰 <span id="coin-count">0</span></div>
+    </div>
 
-<div class="page">
-    <div id="video-container" class="video-box">
-        <div id="player-placeholder"></div>
-        
-        <div id="start-overlay" class="overlay" onclick="activateVideo()">
-            <div class="play-btn">▶ СМОТРЕТЬ (180 сек)</div>
-            <div style="font-size: 10px; margin-top: 8px;">Звук включится автоматически</div>
+    <div id="page-home" class="page active-page">
+        <div class="video-box" id="main-player-box">
+            <div id="player-render"></div>
+            <div id="start-overlay" class="overlay" onclick="startWatching()">
+                <div style="background:var(--primary); padding:15px 30px; border-radius:30px; font-weight:bold;">▶ СМОТРЕТЬ И ЗАРАБОТАТЬ</div>
+                <p style="font-size:12px; margin-top:10px; color:#aaa;">За просмотр 180 сек: +150 💰</p>
+            </div>
+        </div>
+        <div id="timer-box" style="display:none; margin-top:20px;">
+            <div style="font-size:40px; color:var(--gold); font-weight:bold;"><span id="seconds">180</span> сек.</div>
+            <p>Не закрывайте приложение до конца таймера</p>
+        </div>
+        <div id="nav-controls" style="display:flex; gap:10px; margin-top:auto;">
+            <button class="btn-action" style="background:#333" onclick="changeVid(-1)">⬅</button>
+            <button class="btn-action" style="background:#333" onclick="changeVid(1)">➡</button>
         </div>
     </div>
 
-    <div id="timer-display" style="display:none;">
-        <div class="timer-text" id="seconds">180</div>
-        <div class="hint">Не закрывайте приложение до конца таймера</div>
+    <div id="page-upload" class="page">
+        <h3>🚀 ПРОДВИЖЕНИЕ</h3>
+        <input type="text" id="yt-url" placeholder="Ссылка на видео YouTube">
+        <input type="number" id="v-count" value="10" placeholder="Количество просмотров">
+        <div style="margin:20px 0; background:rgba(255,255,255,0.05); padding:15px; border-radius:12px;">
+            <p>Длительность: <b>180 секунд</b></p>
+            <p>Стоимость: <b style="color:var(--gold)" id="total-price">3000</b> монет</p>
+        </div>
+        <button class="btn-action" onclick="createOrder()">ОПУБЛИКОВАТЬ</button>
     </div>
 
-    <div id="controls" style="margin-top: auto; display: flex; gap: 10px; padding-bottom: 20px;">
-        <button onclick="location.reload()" style="flex:1; padding:15px; border-radius:10px; border:none; background:#333; color:white;">Пропустить ➡</button>
+    <div id="page-orders" class="page">
+        <h3>📊 МОИ ЗАКАЗЫ</h3>
+        <div id="orders-list">Загрузка...</div>
     </div>
-</div>
 
-<div class="nav-bar">
-    <div style="color:var(--primary)">🏠 ЛЕНТА</div>
-    <div onclick="tg.showAlert('Магазин будет доступен скоро')">🛒 МАГАЗИН</div>
-</div>
+    <div id="page-shop" class="page">
+        <h3>🛒 МАГАЗИН МОНЕТ</h3>
+        <div class="grid">
+            <div class="card"><b>5,000 💰</b><button class="btn-buy" onclick="addCoins(5000)">$1.99</button></div>
+            <div class="card"><b>15,000 💰</b><button class="btn-buy" onclick="addCoins(15000)">$4.99</button></div>
+            <div class="card" style="grid-column: span 2;"><b>50,000 💰</b><button class="btn-buy" onclick="addCoins(50000)">$12.99</button></div>
+        </div>
+    </div>
 
-<script>
-    const S_URL = "https://itmwgzryoeeehymbyrdz.supabase.co", 
-          S_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml0bXdnenJ5b2VlZWh5bWJ5cmR6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2ODY2NzcxNywiZXhwIjoyMDg0MjQzNzE3fQ.YJNdFs468N3vIqzvEfQPzg_jAGXsx-rN8YDMqQX793g", 
-          sb = supabase.createClient(S_URL, S_KEY), tg = window.Telegram.WebApp;
+    <div class="nav-bar">
+        <div class="nav-btn active" onclick="tab('home', this)">🏠 ЛЕНТА</div>
+        <div class="nav-btn" onclick="tab('upload', this)">📷 ЗАГРУЗИТЬ</div>
+        <div class="nav-btn" onclick="tab('orders', this); loadOrders();">📊 ЗАКАЗЫ</div>
+        <div class="nav-btn" onclick="tab('shop', this)">🛒 МАГАЗИН</div>
+    </div>
 
-    let userId = tg.initDataUnsafe?.user?.id?.toString() || "u_test", 
-        vids = [], curr = 0, timeLeft = 180, timerId;
+    <script>
+        const S_URL = "https://itmwgzryoeeehymbyrdz.supabase.co", 
+              S_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml0bXdnenJ5b2VlZWh5bWJ5cmR6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2ODY2NzcxNywiZXhwIjoyMDg0MjQzNzE3fQ.YJNdFs468N3vIqzvEfQPzg_jAGXsx-rN8YDMqQX793g", 
+              sb = supabase.createClient(S_URL, S_KEY), tg = window.Telegram.WebApp;
 
-    async function boot() {
-        tg.expand();
-        let { data: p } = await sb.from('profiles').select('coins').eq('user_id', userId).single();
-        document.getElementById('coin-count').innerText = p ? p.coins : 500;
-        
-        let { data: v } = await sb.from('videos').select('*');
-        vids = (v || []).filter(item => (item.views_done || 0) < item.views_needed);
-        
-        if (vids.length === 0) {
-            document.getElementById('start-overlay').innerHTML = "Видео закончились";
+        let userId = tg.initDataUnsafe?.user?.id?.toString() || "u_test", 
+            vids = [], curr = 0, coins = 0, timerId;
+
+        async function boot() {
+            tg.expand();
+            let { data: p } = await sb.from('profiles').select('*').eq('user_id', userId).single();
+            if (p) { coins = p.coins; } 
+            else { coins = 500; await sb.from('profiles').insert([{user_id: userId, coins: 500}]); }
+            document.getElementById('coin-count').innerText = coins;
+            
+            let { data: v } = await sb.from('videos').select('*');
+            vids = (v || []).filter(item => (item.views_done || 0) < item.views_needed);
         }
-    }
 
-    function activateVideo() {
-        if (vids.length === 0) return;
+        // --- ЛОГИКА ПЛЕЕРА ---
+        function startWatching() {
+            if (!vids[curr]) return;
+            const vidId = vids[curr].youtube_id;
+            
+            document.getElementById('player-render').innerHTML = `
+                <iframe src="https://www.youtube.com/embed/${vidId}?autoplay=1&mute=0&rel=0&playsinline=1" 
+                allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+            
+            document.getElementById('start-overlay').style.display = 'none';
+            document.getElementById('nav-controls').style.display = 'none';
+            document.getElementById('timer-box').style.display = 'block';
 
-        const videoId = vids[curr].youtube_id;
-        const container = document.getElementById('player-placeholder');
-        
-        // Вставляем iframe напрямую. 
-        // allow="autoplay; accelerometer; encrypted-media" — КРИТИЧНО для звука и просмотров
-        container.innerHTML = `
-            <iframe 
-                src="https://www.youtube.com/embed/${videoId}?autoplay=1&mute=0&controls=1&rel=0&playsinline=1" 
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-                allowfullscreen>
-            </iframe>`;
+            let t = 180;
+            document.getElementById('seconds').innerText = t;
+            
+            clearInterval(timerId);
+            timerId = setInterval(() => {
+                t--;
+                document.getElementById('seconds').innerText = t;
+                if (t <= 0) {
+                    clearInterval(timerId);
+                    completeTask();
+                }
+            }, 1000);
+        }
 
-        document.getElementById('start-overlay').style.display = 'none';
-        document.getElementById('timer-display').style.display = 'block';
-        document.getElementById('controls').style.display = 'none';
+        async function completeTask() {
+            coins += 150;
+            await sb.from('profiles').update({ coins }).eq('user_id', userId);
+            await sb.from('videos').update({ views_done: (vids[curr].views_done || 0) + 1 }).eq('id', vids[curr].id);
+            tg.showAlert("Вы получили 150 монет!");
+            location.reload();
+        }
 
-        startTimer();
-    }
+        // --- ЛОГИКА ЗАКАЗОВ ---
+        async function createOrder() {
+            const url = document.getElementById('yt-url').value;
+            const vidId = url.split('v=')[1]?.split('&')[0] || url.split('/').pop();
+            const count = parseInt(document.getElementById('v-count').value);
+            const price = count * 300; // 300 за один просмотр 180с
 
-    function startTimer() {
-        clearInterval(timerId);
-        timerId = setInterval(() => {
-            timeLeft--;
-            document.getElementById('seconds').innerText = timeLeft;
-            if (timeLeft <= 0) {
-                clearInterval(timerId);
-                finish();
+            if (coins < price) return tg.showAlert("Недостаточно монет!");
+            
+            const { error } = await sb.from('videos').insert([{
+                youtube_id: vidId,
+                views_needed: count,
+                duration: 180,
+                user_id: userId,
+                views_done: 0
+            }]);
+
+            if (!error) {
+                coins -= price;
+                await sb.from('profiles').update({ coins }).eq('user_id', userId);
+                tg.showAlert("Задание успешно добавлено!");
+                location.reload();
             }
-        }, 1000);
-    }
+        }
 
-    async function finish() {
-        const currentCoins = parseInt(document.getElementById('coin-count').innerText);
-        await sb.from('profiles').update({ coins: currentCoins + 150 }).eq('user_id', userId);
-        await sb.from('videos').update({ views_done: (vids[curr].views_done || 0) + 1 }).eq('id', vids[curr].id);
-        tg.showAlert("✅ Награда 150 монет получена!");
-        location.reload();
-    }
+        async function loadOrders() {
+            const list = document.getElementById('orders-list');
+            list.innerHTML = "Загрузка...";
+            let { data: myV } = await sb.from('videos').select('*').eq('user_id', userId);
+            
+            list.innerHTML = (myV || []).map(v => `
+                <div class="card">
+                    <button class="btn-del" onclick="deleteOrder(${v.id})">Удалить</button>
+                    <b>ID: ${v.youtube_id}</b><br>
+                    <small>Прогресс: ${v.views_done}/${v.views_needed}</small>
+                </div>
+            `).join('') || "У вас пока нет активных заказов";
+        }
 
-    window.onload = boot;
-</script>
+        async function deleteOrder(id) {
+            if (confirm("Удалить задание? Монеты не возвращаются.")) {
+                await sb.from('videos').delete().eq('id', id);
+                loadOrders();
+            }
+        }
 
+        // --- МАГАЗИН ---
+        async function addCoins(amount) {
+            coins += amount;
+            await sb.from('profiles').update({ coins }).eq('user_id', userId);
+            document.getElementById('coin-count').innerText = coins;
+            tg.showAlert(`Пополнено на ${amount} монет!`);
+        }
+
+        // --- НАВИГАЦИЯ ---
+        function tab(n, el) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active-page'));
+            document.getElementById('page-' + n).classList.add('active-page');
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            el.classList.add('active');
+        }
+
+        function changeVid(dir) {
+            if (vids.length === 0) return;
+            curr = (curr + dir + vids.length) % vids.length;
+            document.getElementById('player-render').innerHTML = "";
+            document.getElementById('start-overlay').style.display = 'flex';
+        }
+
+        window.onload = boot;
+    </script>
 </body>
 </html>
