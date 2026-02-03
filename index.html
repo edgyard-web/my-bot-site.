@@ -6,59 +6,62 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        :root { --tg-bg: #1a1b1e; --primary: #0088cc; --gold: #ffeb3b; --red: #ff4444; }
-        body { background: var(--tg-bg); color: white; font-family: sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; align-items: center; }
+        :root { --tg-bg: #1a1b1e; --primary: #0088cc; --gold: #ffeb3b; }
+        body { background: var(--tg-bg); color: white; font-family: sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        .header { padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; background: #111; border-bottom: 1px solid #333; }
+        .page { flex: 1; display: flex; flex-direction: column; padding: 15px; text-align: center; }
         
-        .header { width: 100%; padding: 15px; display: flex; justify-content: space-between; background: #111; border-bottom: 1px solid #333; box-sizing: border-box; }
-        
-        .card { background: #25262b; margin: 20px; padding: 20px; border-radius: 20px; width: calc(100% - 40px); box-sizing: border-box; text-align: center; border: 1px solid #333; }
+        /* Контейнер видео */
+        .video-box { 
+            width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 15px; 
+            overflow: hidden; position: relative; border: 2px solid #333; 
+        }
+        iframe { width: 100%; height: 100%; border: none; }
 
-        .thumbnail { width: 100%; border-radius: 12px; margin-bottom: 15px; display: block; }
-        
-        .btn-main { background: var(--primary); color: white; border: none; padding: 20px; border-radius: 15px; width: 100%; font-size: 18px; font-weight: bold; cursor: pointer; text-decoration: none; display: block; }
-        
-        .btn-verify { background: #4caf50; display: none; margin-top: 15px; }
+        /* Наложенная кнопка для старта (Разблокировка звука) */
+        .overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7); display: flex; flex-direction: column;
+            align-items: center; justify-content: center; z-index: 10; cursor: pointer;
+        }
+        .play-btn { background: var(--primary); padding: 12px 25px; border-radius: 30px; font-weight: bold; }
 
-        .timer-big { font-size: 60px; font-weight: bold; color: var(--gold); margin: 20px 0; }
+        .timer-text { font-size: 40px; color: var(--gold); font-weight: bold; margin: 15px 0; }
+        .hint { font-size: 12px; color: #888; margin-bottom: 10px; }
         
-        .step { font-size: 14px; color: #aaa; margin-bottom: 10px; display: flex; align-items: center; gap: 10px; text-align: left; }
-        .step b { color: var(--primary); }
-
-        .nav-bar { background: #111; display: flex; justify-content: space-around; padding: 20px 0 30px; position: fixed; bottom: 0; width: 100%; border-top: 1px solid #222; }
+        .nav-bar { background: #111; display: flex; justify-content: space-around; padding: 15px 0 30px; border-top: 1px solid #222; }
     </style>
 </head>
 <body>
 
 <div class="header">
-    <div style="font-weight: bold;">UVIEW PRO 2026</div>
+    <div>🤖 UVIEW PRO</div>
     <div style="color:var(--gold)">💰 <span id="coin-count">0</span></div>
 </div>
 
-<div class="card" id="task-card">
-    <img id="vid-thumb" class="thumbnail" src="" alt="Превью">
-    
-    <div class="step"><b>1.</b> Нажми кнопку ниже, чтобы открыть видео</div>
-    <div class="step"><b>2.</b> Посмотри его 180 сек (в приложении звук ЕСТЬ)</div>
-    <div class="step"><b>3.</b> Вернись сюда, чтобы забрать награду</div>
-
-    <a id="yt-link" class="btn-main" onclick="startTask()">▶ ОТКРЫТЬ В YOUTUBE</a>
-    
-    <div id="timer-box" style="display:none;">
-        <div class="timer-big" id="timer">180</div>
-        <div style="color: #888;">Не закрывайте мини-приложение...</div>
+<div class="page">
+    <div id="video-container" class="video-box">
+        <div id="player-placeholder"></div>
+        
+        <div id="start-overlay" class="overlay" onclick="activateVideo()">
+            <div class="play-btn">▶ СМОТРЕТЬ (180 сек)</div>
+            <div style="font-size: 10px; margin-top: 8px;">Звук включится автоматически</div>
+        </div>
     </div>
 
-    <button id="claim-btn" class="btn-main btn-verify" onclick="claimReward()">💰 ЗАБРАТЬ 150 МОНЕТ</button>
-</div>
+    <div id="timer-display" style="display:none;">
+        <div class="timer-text" id="seconds">180</div>
+        <div class="hint">Не закрывайте приложение до конца таймера</div>
+    </div>
 
-<div id="no-vids" style="display:none; padding: 50px; text-align: center;">
-    <h2>Все видео просмотрены!</h2>
-    <p>Зайдите позже или добавьте своё видео.</p>
+    <div id="controls" style="margin-top: auto; display: flex; gap: 10px; padding-bottom: 20px;">
+        <button onclick="location.reload()" style="flex:1; padding:15px; border-radius:10px; border:none; background:#333; color:white;">Пропустить ➡</button>
+    </div>
 </div>
 
 <div class="nav-bar">
     <div style="color:var(--primary)">🏠 ЛЕНТА</div>
-    <div onclick="tg.showAlert('Магазин будет доступен после обновления')">🛒 МАГАЗИН</div>
+    <div onclick="tg.showAlert('Магазин будет доступен скоро')">🛒 МАГАЗИН</div>
 </div>
 
 <script>
@@ -77,38 +80,50 @@
         let { data: v } = await sb.from('videos').select('*');
         vids = (v || []).filter(item => (item.views_done || 0) < item.views_needed);
         
-        if (vids.length > 0) {
-            const vid = vids[curr];
-            document.getElementById('vid-thumb').src = `https://img.youtube.com/vi/${vid.youtube_id}/mqdefault.jpg`;
-            document.getElementById('yt-link').href = `https://www.youtube.com/watch?v=${vid.youtube_id}`;
-        } else {
-            document.getElementById('task-card').style.display = 'none';
-            document.getElementById('no-vids').style.display = 'block';
+        if (vids.length === 0) {
+            document.getElementById('start-overlay').innerHTML = "Видео закончились";
         }
     }
 
-    function startTask() {
-        // Запускаем таймер сразу после клика по ссылке
-        document.getElementById('yt-link').style.display = 'none';
-        document.getElementById('timer-box').style.display = 'block';
+    function activateVideo() {
+        if (vids.length === 0) return;
+
+        const videoId = vids[curr].youtube_id;
+        const container = document.getElementById('player-placeholder');
         
+        // Вставляем iframe напрямую. 
+        // allow="autoplay; accelerometer; encrypted-media" — КРИТИЧНО для звука и просмотров
+        container.innerHTML = `
+            <iframe 
+                src="https://www.youtube.com/embed/${videoId}?autoplay=1&mute=0&controls=1&rel=0&playsinline=1" 
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                allowfullscreen>
+            </iframe>`;
+
+        document.getElementById('start-overlay').style.display = 'none';
+        document.getElementById('timer-display').style.display = 'block';
+        document.getElementById('controls').style.display = 'none';
+
+        startTimer();
+    }
+
+    function startTimer() {
+        clearInterval(timerId);
         timerId = setInterval(() => {
             timeLeft--;
-            document.getElementById('timer').innerText = timeLeft;
+            document.getElementById('seconds').innerText = timeLeft;
             if (timeLeft <= 0) {
                 clearInterval(timerId);
-                document.getElementById('timer-box').style.display = 'none';
-                document.getElementById('claim-btn').style.display = 'block';
-                tg.HapticFeedback.notificationOccurred('success');
+                finish();
             }
         }, 1000);
     }
 
-    async function claimReward() {
+    async function finish() {
         const currentCoins = parseInt(document.getElementById('coin-count').innerText);
         await sb.from('profiles').update({ coins: currentCoins + 150 }).eq('user_id', userId);
         await sb.from('videos').update({ views_done: (vids[curr].views_done || 0) + 1 }).eq('id', vids[curr].id);
-        tg.showAlert("Успех! +150 монет начислено.");
+        tg.showAlert("✅ Награда 150 монет получена!");
         location.reload();
     }
 
